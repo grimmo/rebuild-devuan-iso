@@ -8,64 +8,74 @@ preseed=$3
 input_file_dir=$4
 
 msg() {
-    printf '>>> %s\n' "$@"
-}
+	    printf '>>> %s\n' "$@"
+    }
 
-if ! [[ -r $input_iso && -r $preseed ]]; then
-    printf '%s\n' \
-        "Usage: ${0##*/} <input-iso> <output-iso> <preseed-file> [file-dir]" \
-        "" \
-        "input-iso:    the debian iso to modify" \
-        "output-iso:   where to store the modified iso" \
-        "preseed-file: the location of a preseed file to inject" \
-        "file-dir:     an optional directory to be put at extra/ in the iso"
-    exit 1
-fi
+    if ! [[ -r $input_iso && -r $preseed ]]; then
+	        printf '%s\n' \
+			        "Usage: ${0##*/} <input-iso> <output-iso> <preseed-file> [file-dir]" \
+				        "" \
+					        "input-iso:    the debian iso to modify" \
+						    "output-iso:   where to store the modified iso" \
+							"preseed-file: the location of a preseed file to inject" \
+							"file-dir:     an optional directory to be put at extra/ in the iso"
+		    exit 1
+	    fi
 
-iso_dir=$(mktemp -d)
-initrd_dir=$(mktemp -d)
+	    iso_dir=$(mktemp -d)
+	    initrd_dir=$(mktemp -d)
 
-msg "Extracting source image"
-bsdtar -C "$iso_dir" -xf "$input_iso"
+	    msg "Mounting source image"
+	    udevil mount $input_iso 
+        msg "Copying source image to $iso_dir"
+	    cp -rT /media/$input_iso/ $iso_dir/
+	    msg "Enabling write access to $iso_dir/boot/isolinux/"
+	    chmod +w -R $iso_dir/boot/isolinux/
 
-initrd=$iso_dir/install.amd/initrd.gz
+	    initrd=$iso_dir/boot/isolinux/initrd.gz
 
-(
-cd "$initrd_dir"
-msg "Extracting initrd"
-gzip -d < "$initrd" | cpio -i --no-absolute-filenames
-)
+	    (
+	    cd "$initrd_dir"
+	    msg "Extracting initrd into $initrd_dir"
+	    gzip -d < "$initrd" | cpio -i --no-absolute-filenames
+	    )
 
-msg "Injecting preseed"
-cp "$preseed" "$initrd_dir/preseed.cfg"
+	    msg "Injecting preseed"
+	    cp "$preseed" "$initrd_dir/preseed.cfg"
 
-(
-msg "Rebuilding initrd"
-cd "$initrd_dir"
-find . -print0 | cpio -H newc -o -0 | gzip -9 > "$initrd"
-)
+	    (
+	    msg "Rebuilding initrd in $initrd_dir"
+	    cd "$initrd_dir"
+	    find . -print0 | cpio -H newc -o -0 | gzip -9 > "$initrd"
+	    )
 
-msg "Setting up automatic booting to preseed"
-sed -i 's/timeout 0/timeout 5/' "$iso_dir/isolinux/isolinux.cfg"
-sed -i '/^\tappend/d' "$iso_dir/isolinux/txt.cfg"
-printf '\tappend vga=788 initrd=/install.amd/initrd.gz auto text\n' >> "$iso_dir/isolinux/txt.cfg"
+	    msg "Setting up automatic booting to preseed"
+	    sed -i 's/timeout 0/timeout 5/' "$iso_dir/boot/isolinux/isolinux.cfg"
+	    sed -i '/^\tappend/d' "$iso_dir/boot/isolinux/txt.cfg"
+	    printf '\tappend vga=788 initrd=/boot/isolinux/initrd.gz auto text\n' >> "$iso_dir/boot/isolinux/txt.cfg"
 
-if [[ $input_file_dir ]]; then
-    msg "Adding custom files to 'extra' dir on image"
-    cp -a "$input_file_dir" "$iso_dir/extra"
-fi
+	    if [[ $input_file_dir ]]; then
+		        msg "Adding custom files to 'extra' dir on image"
+			    cp -a "$input_file_dir" "$iso_dir/extra"
+		    fi
 
-msg "Generating md5sums"
-( cd "$iso_dir" && find . -type f -exec md5sum {} + > md5sum.txt )
+		    msg "Generating md5sums"
+		    ( cd "$iso_dir" && chmod +w md5sum.txt && find . -type f -exec md5sum {} + > md5sum.txt && chmod -w md5sum.txt)
 
-msg "Generating output ISO image"
-mkisofs -quiet \
-    -o "$output_iso" \
-    -r -J -no-emul-boot -boot-load-size 4 -boot-info-table \
-    -b isolinux/isolinux.bin -c isolinux/boot.cat \
-    "$iso_dir"
+	    	    #msg "Disabling write access to $iso_dir/boot/isolinux/"
+	            #chmod -w -R $iso_dir/boot/isolinux/
+		    msg "Generating output ISO image"
+            
+            dd if=$input_iso bs=1 count=432 of=/tmp/isohdpfx.bin
 
-msg "Removing temporary directories"
-rm -rf "$iso_dir" "$initrd_dir"
+            xorriso -as mkisofs -o preseed_beowulf3.iso \
+            -isohybrid-mbr /tmp/isohdpfx.bin \
+            -c boot/isolinux/boot.cat -b boot/isolinux/isolinux.bin \
+            -no-emul-boot -boot-load-size 4 -boot-info-table \
+            "$iso_dir"            
 
-msg "Output ISO generated: $output_iso"
+		    msg "Removing temporary directories"
+		    rm -rf "$iso_dir" "$initrd_dir"
+
+		    msg "Output ISO generated: $output_iso"
+
