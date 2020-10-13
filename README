@@ -1,8 +1,8 @@
-Rebuild a Debian ISO with preseed/custom files.
+Rebuild a Devuan ISO with preseed/custom files.
 
 # Usage
 
-    rebuild-debian-iso <input-iso> <output-iso> <preseed-file> [file-dir]
+    rebuild-devuan-iso <input-iso> <output-iso> <preseed-file> [file-dir]
 
     input-iso:    the debian iso to modify
     output-iso:   where to store the modified iso
